@@ -1,4 +1,4 @@
-// server.js - Complete Node.js backend for Shithead card game
+// server.js - Fixed Node.js backend with correct host logic
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
@@ -128,9 +128,11 @@ function addPlayerToRoom(socket, roomCode, playerName) {
     
     if (!room.host) {
         room.host = socket.id;
+        console.log(`Setting ${socket.id} as host for room ${roomCode}`);
     }
     
     socket.join(roomCode);
+    console.log(`Player ${playerName} (${socket.id}) joined room ${roomCode}. Host is: ${room.host}`);
     return room;
 }
 
@@ -144,11 +146,13 @@ function removePlayerFromRoom(socket, roomCode) {
     // If host left, assign new host
     if (room.host === socket.id && room.players.size > 0) {
         room.host = room.players.keys().next().value;
+        console.log(`Host left, new host is: ${room.host}`);
     }
     
     // Delete room if empty
     if (room.players.size === 0) {
         rooms.delete(roomCode);
+        console.log(`Room ${roomCode} deleted (empty)`);
     }
     
     socket.leave(roomCode);
@@ -182,6 +186,7 @@ function startGame(room) {
     });
     
     room.gameState.gameLog.push('Game started! Players setting up face-up cards...');
+    console.log(`Game started in room ${room.code} by host ${room.host}`);
     return true;
 }
 
@@ -371,6 +376,27 @@ function getEffectiveTopCard(room) {
     return null;
 }
 
+// FIXED: Send individual messages to each player with correct isHost status
+function broadcastGameState(room) {
+    const playersArray = Array.from(room.players.values());
+    const effectiveTopCard = getEffectiveTopCard(room);
+    
+    // Send individual messages to each player with their specific isHost status
+    room.players.forEach((player, playerId) => {
+        const socket = io.sockets.sockets.get(playerId);
+        if (socket) {
+            socket.emit('gameStateUpdate', {
+                players: playersArray,
+                gameState: room.gameState,
+                isHost: room.host === playerId, // FIXED: Correctly set for each individual player
+                effectiveTopCard: effectiveTopCard
+            });
+        }
+    });
+    
+    console.log(`Broadcasted game state for room ${room.code}. Host: ${room.host}, Players: ${playersArray.map(p => p.name).join(', ')}`);
+}
+
 // Socket.IO connection handling
 io.on('connection', (socket) => {
     console.log('Player connected:', socket.id);
@@ -384,12 +410,7 @@ io.on('connection', (socket) => {
             isHost: true
         });
         
-        io.to(room.code).emit('gameStateUpdate', {
-            players: Array.from(room.players.values()),
-            gameState: room.gameState,
-            isHost: socket.id === room.host,
-            effectiveTopCard: getEffectiveTopCard(room)
-        });
+        broadcastGameState(room);
     });
     
     socket.on('joinRoom', (data) => {
@@ -402,12 +423,7 @@ io.on('connection', (socket) => {
                 isHost: socket.id === room.host
             });
             
-            io.to(roomCode).emit('gameStateUpdate', {
-                players: Array.from(room.players.values()),
-                gameState: room.gameState,
-                isHost: socket.id === room.host,
-                effectiveTopCard: getEffectiveTopCard(room)
-            });
+            broadcastGameState(room);
         } else {
             socket.emit('error', 'Room not found');
         }
@@ -415,15 +431,15 @@ io.on('connection', (socket) => {
     
     socket.on('startGame', (roomCode) => {
         const room = rooms.get(roomCode);
+        console.log(`Start game request from ${socket.id} for room ${roomCode}. Host is: ${room?.host}`);
+        
         if (room && room.host === socket.id) {
             if (startGame(room)) {
-                io.to(roomCode).emit('gameStateUpdate', {
-                    players: Array.from(room.players.values()),
-                    gameState: room.gameState,
-                    isHost: socket.id === room.host,
-                    effectiveTopCard: getEffectiveTopCard(room)
-                });
+                broadcastGameState(room);
             }
+        } else {
+            console.log(`Start game denied - not host or room not found`);
+            socket.emit('error', 'Only the host can start the game');
         }
     });
     
@@ -432,12 +448,7 @@ io.on('connection', (socket) => {
         const room = rooms.get(roomCode);
         
         if (room && completeSetup(room, socket.id, selectedCards)) {
-            io.to(roomCode).emit('gameStateUpdate', {
-                players: Array.from(room.players.values()),
-                gameState: room.gameState,
-                isHost: socket.id === room.host,
-                effectiveTopCard: getEffectiveTopCard(room)
-            });
+            broadcastGameState(room);
         }
     });
     
@@ -446,12 +457,7 @@ io.on('connection', (socket) => {
         const room = rooms.get(roomCode);
         
         if (room && processCardPlay(room, socket.id, cardIndices)) {
-            io.to(roomCode).emit('gameStateUpdate', {
-                players: Array.from(room.players.values()),
-                gameState: room.gameState,
-                isHost: socket.id === room.host,
-                effectiveTopCard: getEffectiveTopCard(room)
-            });
+            broadcastGameState(room);
         } else {
             socket.emit('error', 'Invalid card play');
         }
@@ -461,12 +467,7 @@ io.on('connection', (socket) => {
         const room = rooms.get(roomCode);
         
         if (room && pickUpPile(room, socket.id)) {
-            io.to(roomCode).emit('gameStateUpdate', {
-                players: Array.from(room.players.values()),
-                gameState: room.gameState,
-                isHost: socket.id === room.host,
-                effectiveTopCard: getEffectiveTopCard(room)
-            });
+            broadcastGameState(room);
         }
     });
     
@@ -475,12 +476,7 @@ io.on('connection', (socket) => {
         
         const room = rooms.get(roomCode);
         if (room) {
-            io.to(roomCode).emit('gameStateUpdate', {
-                players: Array.from(room.players.values()),
-                gameState: room.gameState,
-                isHost: socket.id === room.host,
-                effectiveTopCard: getEffectiveTopCard(room)
-            });
+            broadcastGameState(room);
         }
     });
     
@@ -492,12 +488,7 @@ io.on('connection', (socket) => {
                 removePlayerFromRoom(socket, roomCode);
                 
                 if (room.players.size > 0) {
-                    io.to(roomCode).emit('gameStateUpdate', {
-                        players: Array.from(room.players.values()),
-                        gameState: room.gameState,
-                        isHost: false,
-                        effectiveTopCard: getEffectiveTopCard(room)
-                    });
+                    broadcastGameState(room);
                 }
             }
         });
