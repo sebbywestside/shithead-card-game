@@ -1,8 +1,7 @@
-// server.js - Updated Node.js backend for Shithead card game with Joker and 3 card rules
+// server.js - Complete Node.js backend for Shithead card game
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
-const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
@@ -40,7 +39,7 @@ function createDeck() {
     deck.push({
         suit: '🃏',
         rank: 'JOKER',
-        value: 15, // Higher than Ace
+        value: 15,
         color: 'black'
     });
     deck.push({
@@ -75,21 +74,18 @@ function generateRoomCode() {
 
 function canPlayCards(cards, topCard) {
     if (cards.length === 0) return false;
-    if (!topCard) return true; // Can play any card on empty pile
+    if (!topCard) return true;
     
     const firstCard = cards[0];
     
-    // Special cards that can be played on anything
     if (firstCard.rank === '2' || firstCard.rank === '10' || firstCard.rank === '3' || firstCard.rank === 'JOKER') {
         return true;
     }
     
-    // 7 rule: next card must be 7 or lower (unless it's a special card)
     if (topCard.rank === '7' && firstCard.value > 7) {
         return false;
     }
     
-    // Normal rule: must be equal or higher
     return firstCard.value >= topCard.value;
 }
 
@@ -106,8 +102,8 @@ function createRoom() {
             discardPile: [],
             playerOrder: [],
             gameLog: [],
-            direction: 1, // 1 for clockwise, -1 for counter-clockwise
-            invisibleCard: null // Tracks the invisible 3 card effect
+            direction: 1,
+            invisibleCard: null
         },
         host: null
     };
@@ -170,19 +166,16 @@ function startGame(room) {
     room.gameState.direction = 1;
     room.gameState.invisibleCard = null;
     
-    // Deal cards to all players
     room.players.forEach(player => {
         player.hand = [];
         player.faceUpCards = [];
         player.faceDownCards = [];
         player.setupComplete = false;
         
-        // Deal 3 face-down cards
         for (let i = 0; i < 3; i++) {
             player.faceDownCards.push(room.gameState.deck.pop());
         }
         
-        // Deal 6 cards to hand for setup
         for (let i = 0; i < 6; i++) {
             player.hand.push(room.gameState.deck.pop());
         }
@@ -201,7 +194,6 @@ function processCardPlay(room, playerId, cardIndices) {
     const player = room.players.get(playerId);
     if (!player) return false;
     
-    // Validate it's player's turn
     const currentPlayerId = room.gameState.playerOrder[room.gameState.currentPlayer];
     if (currentPlayerId !== playerId) return false;
     
@@ -213,13 +205,11 @@ function processCardPlay(room, playerId, cardIndices) {
         } else if (cardData.type === 'faceDown') {
             return player.faceDownCards[cardData.index];
         }
-    }).filter(card => card); // Remove undefined cards
+    }).filter(card => card);
     
     if (cardsToPlay.length === 0) return false;
     
     const topCard = room.gameState.discardPile[room.gameState.discardPile.length - 1];
-    
-    // For face-down cards, allow playing but check after
     const isFaceDown = cardIndices.some(cardData => cardData.type === 'faceDown');
     
     if (!isFaceDown && !canPlayCards(cardsToPlay, topCard)) {
@@ -228,7 +218,7 @@ function processCardPlay(room, playerId, cardIndices) {
     
     // Remove cards from player's hand/piles
     cardIndices
-        .sort((a, b) => b.index - a.index) // Sort in reverse order to avoid index shifting
+        .sort((a, b) => b.index - a.index)
         .forEach(cardData => {
             let card;
             if (cardData.type === 'hand') {
@@ -241,7 +231,6 @@ function processCardPlay(room, playerId, cardIndices) {
             
             if (card) {
                 if (card.rank === '3') {
-                    // 3 is invisible - store it but don't add to discard pile visually
                     room.gameState.invisibleCard = card;
                     room.gameState.gameLog.push(`${player.name} played an invisible 3`);
                 } else {
@@ -254,7 +243,6 @@ function processCardPlay(room, playerId, cardIndices) {
     if (isFaceDown) {
         const lastPlayedCard = cardsToPlay[cardsToPlay.length - 1];
         if (lastPlayedCard.rank !== '3' && !canPlayCards([lastPlayedCard], topCard)) {
-            // Can't play face-down card, pick up pile
             player.hand.push(lastPlayedCard);
             player.hand.push(...room.gameState.discardPile);
             room.gameState.discardPile = [];
@@ -273,17 +261,13 @@ function processCardPlay(room, playerId, cardIndices) {
         room.gameState.discardPile = [];
         room.gameState.invisibleCard = null;
         room.gameState.gameLog.push(`${player.name} burned the pile with a 10!`);
-        // Player gets another turn after burning
         skipNextTurn = true;
     } else if (lastCard.rank === '2') {
         room.gameState.gameLog.push(`${player.name} reset the pile with a 2!`);
     } else if (lastCard.rank === 'JOKER') {
-        room.gameState.direction *= -1; // Flip direction
+        room.gameState.direction *= -1;
         const directionText = room.gameState.direction === 1 ? 'clockwise' : 'counter-clockwise';
         room.gameState.gameLog.push(`${player.name} played a Joker! Direction is now ${directionText}`);
-    } else if (lastCard.rank === '3') {
-        // 3 is invisible, effect handled above
-        // The invisible card will affect the next player
     }
     
     // Apply invisible card effect to next player
@@ -293,12 +277,11 @@ function processCardPlay(room, playerId, cardIndices) {
         const nextPlayer = room.players.get(nextPlayerId);
         
         if (nextPlayer) {
-            // The invisible 3 acts on the next player - they must play as if the 3 was the top card
             room.gameState.gameLog.push(`${nextPlayer.name} must play as if there's a 3 on the pile (invisible card effect)`);
         }
     }
     
-    // Refill hand from deck if needed and available
+    // Refill hand from deck if needed
     while (player.hand.length < 3 && room.gameState.deck.length > 0) {
         player.hand.push(room.gameState.deck.pop());
     }
@@ -329,7 +312,6 @@ function pickUpPile(room, playerId) {
     const currentPlayerId = room.gameState.playerOrder[room.gameState.currentPlayer];
     if (currentPlayerId !== playerId) return false;
     
-    // Add invisible card to hand if it exists
     if (room.gameState.invisibleCard) {
         player.hand.push(room.gameState.invisibleCard);
         room.gameState.invisibleCard = null;
@@ -349,7 +331,6 @@ function completeSetup(room, playerId, selectedCards) {
     
     if (selectedCards.length !== 3) return false;
     
-    // Move selected cards to face-up cards
     selectedCards
         .sort((a, b) => b.index - a.index)
         .forEach(selected => {
@@ -359,10 +340,8 @@ function completeSetup(room, playerId, selectedCards) {
     
     player.setupComplete = true;
     
-    // Check if all players completed setup
     const allComplete = Array.from(room.players.values()).every(p => p.setupComplete);
     if (allComplete) {
-        // Fill hands back to 3 cards
         room.players.forEach(player => {
             while (player.hand.length < 3 && room.gameState.deck.length > 0) {
                 player.hand.push(room.gameState.deck.pop());
@@ -508,7 +487,6 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => {
         console.log('Player disconnected:', socket.id);
         
-        // Remove player from all rooms they might be in
         rooms.forEach((room, roomCode) => {
             if (room.players.has(socket.id)) {
                 removePlayerFromRoom(socket, roomCode);
