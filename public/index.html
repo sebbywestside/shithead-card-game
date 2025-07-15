@@ -509,6 +509,21 @@
             </div>
         </div>
 
+        <!-- Setup Phase -->
+        <div class="setup-phase" id="setupPhase">
+            <h2>Game Setup</h2>
+            <p>Select 3 cards from your hand to place face-up on the table:</p>
+            <div class="hand" id="setupHand">
+                <!-- Setup hand cards will be inserted here -->
+            </div>
+            <div class="controls">
+                <button class="btn" onclick="confirmSetup()" id="confirmSetupBtn">Confirm Selection (0/3)</button>
+            </div>
+            <div class="setup-instructions">
+                Choose wisely! These face-up cards will be available to play when your hand is empty.
+            </div>
+        </div>
+
         <!-- Game Area -->
         <div class="game-area" id="gameArea">
             <div class="connection-status" id="gameStatus">Game in progress...</div>
@@ -711,6 +726,7 @@
             document.getElementById('connectionArea').style.display = 'block';
             document.getElementById('lobby').style.display = 'none';
             document.getElementById('gameArea').style.display = 'none';
+            document.getElementById('setupPhase').style.display = 'none';
             
             document.getElementById('playerName').value = '';
             document.getElementById('roomCode').value = '';
@@ -881,60 +897,6 @@
                 });
                 logContainer.scrollTop = logContainer.scrollHeight;
             }
-            const container = document.getElementById('opponentCards');
-            container.innerHTML = '';
-            
-            gameData.players.forEach(player => {
-                if (player.id !== gameData.myPlayerId) {
-                    const opponentDiv = document.createElement('div');
-                    opponentDiv.className = 'opponent-player';
-                    
-                    const nameDiv = document.createElement('div');
-                    nameDiv.className = 'opponent-name';
-                    nameDiv.textContent = player.name;
-                    
-                    const cardsContainer = document.createElement('div');
-                    cardsContainer.className = 'opponent-cards-container';
-                    
-                    // Face-down cards (bottom row)
-                    const faceDownRow = document.createElement('div');
-                    faceDownRow.className = 'face-down-row';
-                    for (let i = 0; i < (player.faceDownCards?.length || 3); i++) {
-                        const card = document.createElement('div');
-                        card.className = 'card face-down';
-                        card.textContent = '🂠';
-                        faceDownRow.appendChild(card);
-                    }
-                    
-                    // Face-up cards (middle row, slightly above face-down)
-                    const faceUpRow = document.createElement('div');
-                    faceUpRow.className = 'face-up-row';
-                    for (let i = 0; i < (player.faceUpCards?.length || 0); i++) {
-                        const card = document.createElement('div');
-                        card.className = 'card face-down'; // Hidden from other players
-                        card.textContent = '🂠';
-                        faceUpRow.appendChild(card);
-                    }
-                    
-                    // Hand cards (top, fan formation)
-                    const handFan = document.createElement('div');
-                    handFan.className = 'hand-fan';
-                    for (let i = 0; i < (player.hand?.length || 0); i++) {
-                        const card = document.createElement('div');
-                        card.className = 'card face-down';
-                        card.textContent = '🂠';
-                        handFan.appendChild(card);
-                    }
-                    
-                    cardsContainer.appendChild(faceDownRow);
-                    cardsContainer.appendChild(faceUpRow);
-                    cardsContainer.appendChild(handFan);
-                    
-                    opponentDiv.appendChild(nameDiv);
-                    opponentDiv.appendChild(cardsContainer);
-                    container.appendChild(opponentDiv);
-                }
-            });
         }
 
         function updateOpponentDisplay() {
@@ -992,6 +954,9 @@
                     container.appendChild(opponentDiv);
                 }
             });
+        }
+
+        function updatePlayerCards() {
             // Update player's own cards with proper interaction rules
             updatePlayerHand();
             updatePlayerFaceUpCards();
